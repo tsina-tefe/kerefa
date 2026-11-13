@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { buildIrp200dTicketHtml, buildIrp200dSettlementReceiptHtml, printIrp200d } from './thermalPrinter';
 
+function roundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
 function referenceStatusLabel(status) {
     if (status === 'completed') {
         return { label: 'PAID / SETTLED', short: 'PAID', className: 'bg-success' };
@@ -64,6 +68,8 @@ export default function PosApp({ initialData }) {
     const routes = initialData.routes || {};
     const csrfToken = initialData.csrfToken || '';
     const appName = initialData.appName || 'Kerefa Restaurant';
+    const serviceChargeRate = Number(initialData.serviceChargeRate ?? 10);
+    const vatRate = Number(initialData.vatRate ?? 15);
 
     // Access Control & Permission Verifier
     const permissions = useMemo(() => initialData.permissions || ['*'], [initialData.permissions]);
@@ -142,6 +148,45 @@ export default function PosApp({ initialData }) {
 
     useEffect(() => {
         document.documentElement.setAttribute('data-bs-theme', 'light');
+    }, []);
+
+    useEffect(() => {
+        const frame = document.createElement('iframe');
+        frame.id = 'irp200dPrintFrame';
+        frame.setAttribute('style', 'position:absolute;width:0;height:0;border:none;visibility:hidden;');
+        document.body.appendChild(frame);
+
+        window.printIrp200dTicket = (ticketContentHtml) => {
+            const doc = frame.contentWindow?.document;
+            if (!doc) return;
+            doc.open();
+            doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>IRP 200D</title><style>
+                @page { size: 80mm auto; margin: 0; }
+                * { box-sizing: border-box; }
+                body { width: 72mm; margin: 0 auto; padding: 3mm 0 8mm; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 12px; line-height: 1.25; color: #000; background: #fff; }
+                .irp200d-ticket-header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 2mm; margin-bottom: 2mm; }
+                .irp200d-title { font-size: 16px; font-weight: 800; margin: 0; }
+                .irp200d-banner { font-size: 14px; font-weight: 900; border: 2px solid #000; padding: 3px 2px; margin: 4px 0; text-align: center; }
+                .irp200d-meta-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+                .irp200d-items-table { width: 100%; border-collapse: collapse; margin: 2mm 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+                .irp200d-items-table th { font-size: 11px; text-transform: uppercase; border-bottom: 1px dashed #000; padding: 3px 0; text-align: left; }
+                .irp200d-items-table td { padding: 3px 0; vertical-align: top; }
+                .irp200d-item-qty { font-size: 15px; font-weight: 800; width: 28px; }
+                .irp200d-item-name { font-size: 13px; font-weight: 700; }
+                .irp200d-item-notes { font-size: 11px; font-style: italic; padding-left: 10px; font-weight: 600; }
+                .irp200d-cutter-feed { height: 12mm; border-bottom: 1px dotted #888; margin-top: 4mm; text-align: center; font-size: 9px; }
+            </style></head><body>${ticketContentHtml}</body></html>`);
+            doc.close();
+            window.setTimeout(() => {
+                frame.contentWindow?.focus();
+                frame.contentWindow?.print();
+            }, 300);
+        };
+
+        return () => {
+            delete window.printIrp200dTicket;
+            frame.remove();
+        };
     }, []);
 
     // Responsive Mobile View Switcher ('content' | 'docket')
@@ -252,16 +297,21 @@ export default function PosApp({ initialData }) {
     // Cart calculations (Grand Total in Ethiopian Birr)
     const cartTotals = useMemo(() => {
         const activeItems = cart.filter(item => !item.voided);
-        const subtotal = activeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const subtotal = roundMoney(activeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0));
+        const chargeType = editingOrder?.order_type || orderType;
+        const serviceCharge = chargeType === 'dine_in' ? roundMoney(subtotal * serviceChargeRate / 100) : 0;
+        const vat = roundMoney((subtotal + serviceCharge) * vatRate / 100);
         const itemCount = activeItems.reduce((sum, item) => sum + item.quantity, 0);
         const newItemsCount = activeItems.filter(it => !it.isExistingItem).reduce((sum, it) => sum + it.quantity, 0);
         return {
             subtotal,
-            grandTotal: subtotal,
+            serviceCharge,
+            vat,
+            grandTotal: roundMoney(subtotal + serviceCharge + vat),
             itemCount,
             newItemsCount
         };
-    }, [cart]);
+    }, [cart, editingOrder, orderType, serviceChargeRate, vatRate]);
 
     // Add item to cart
     const addToCart = useCallback((item) => {
@@ -1094,6 +1144,39 @@ export default function PosApp({ initialData }) {
                     color: #991b1b !important;
                     text-decoration: line-through;
                 }
+                .pos-bill-head {
+                    text-align: center;
+                    padding: 12px 12px 8px;
+                    border-bottom: 2px dashed #94a3b8;
+                }
+                .pos-bill-meta {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 8px;
+                    padding: 3px 12px;
+                    font-size: 12px;
+                }
+                .pos-bill-totals {
+                    margin: 0 12px 8px;
+                    padding-top: 8px;
+                    border-top: 2px dashed #94a3b8;
+                    font-family: 'JetBrains Mono', ui-monospace, monospace;
+                    font-size: 13px;
+                    flex-shrink: 0;
+                }
+                .pos-bill-totals div {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 12px;
+                    padding: 2px 0;
+                }
+                .pos-bill-totals .total {
+                    margin-top: 4px;
+                    padding-top: 6px;
+                    border-top: 1px solid #0f172a;
+                    font-size: 15px;
+                    font-weight: 800;
+                }
 
                 .pos-theme-dark .pos-docket-table {
                     color: #f1f5f9;
@@ -1562,6 +1645,26 @@ export default function PosApp({ initialData }) {
 
                     {/* Docket Table Header & Items List */}
                     <div className="flex-grow-1 overflow-y-auto">
+                        <div className="pos-bill-head">
+                            <div className="fw-bold text-uppercase">{appName}</div>
+                            <div className="small text-muted">Bill</div>
+                        </div>
+                        <div className="pos-bill-meta">
+                            <span>Order</span>
+                            <strong className="font-mono">{editingOrder ? `#${editingOrder.order_number}` : 'New order'}</strong>
+                        </div>
+                        <div className="pos-bill-meta">
+                            <span>Table</span>
+                            <strong>{selectedTable ? `T-${selectedTable.table_number}` : 'Not selected'}</strong>
+                        </div>
+                        <div className="pos-bill-meta">
+                            <span>Waiter</span>
+                            <strong>{selectedWaiter ? selectedWaiter.name : 'Not selected'}</strong>
+                        </div>
+                        <div className="pos-bill-meta">
+                            <span>Time</span>
+                            <strong className="font-mono">{currentTime.toLocaleString()}</strong>
+                        </div>
                         <table className="pos-docket-table">
                             <thead>
                                 <tr>
@@ -1649,6 +1752,13 @@ export default function PosApp({ initialData }) {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    <div className="pos-bill-totals">
+                        <div><span>Subtotal</span><span>{cartTotals.subtotal.toFixed(2)}</span></div>
+                        <div><span>Service charge</span><span>{cartTotals.serviceCharge.toFixed(2)}</span></div>
+                        <div><span>VAT</span><span>{cartTotals.vat.toFixed(2)}</span></div>
+                        <div className="total"><span>Total</span><span>{cartTotals.grandTotal.toFixed(2)}</span></div>
                     </div>
 
                     {/* Docket Bottom Action Bar: VOID (F7) | ORDER / HOLD (F6) | TOTAL (ETB) - Permission Guarded */}
@@ -2170,97 +2280,75 @@ export default function PosApp({ initialData }) {
 
             {/* 3. MODALS & POPUPS */}
 
-            {/* Settle / Paid Modal (Ethiopian Birr Settlement) */}
+            {/* Settle / Paid Modal */}
             {showSettleModal && orderToSettle && (
                 <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-                    <div className="modal-dialog modal-dialog-centered">
+                    <div className="modal-dialog modal-dialog-centered modal-sm">
                         <div className="modal-content border shadow-lg">
-                            <div className="modal-header bg-success text-white">
-                                <h5 className="modal-title fs-6 fw-bold">
-                                    <i className="bi bi-cash-stack me-1"></i> Settle / Mark Order Paid
-                                </h5>
-                                <button type="button" className="btn-close btn-close-white" onClick={() => setShowSettleModal(false)}></button>
+                            <div className="modal-header py-2">
+                                <h5 className="modal-title fs-6 fw-bold">Settle</h5>
+                                <button type="button" className="btn-close" onClick={() => setShowSettleModal(false)}></button>
                             </div>
-                            <div className="modal-body p-4">
+                            <div className="modal-body">
                                 <div className="text-center mb-3">
-                                    <span className="text-muted small text-uppercase">Total Due</span>
-                                    <h2 className="fw-bolder font-mono text-success mb-0">
-                                        ETB {parseFloat(orderToSettle.total_amount).toFixed(2)}
-                                    </h2>
                                     <div className="small text-muted">
-                                        Order #{orderToSettle.order_number} &bull; Table: <strong>{orderToSettle.table ? `T-${orderToSettle.table.table_number}` : 'Takeaway'}</strong>
+                                        #{orderToSettle.order_number} · {orderToSettle.table ? `T-${orderToSettle.table.table_number}` : 'Takeaway'}
+                                    </div>
+                                    <div className="fw-bolder font-mono text-success" style={{ fontSize: '1.75rem' }}>
+                                        ETB {parseFloat(orderToSettle.total_amount).toFixed(2)}
                                     </div>
                                 </div>
 
-                                {/* Payment Method Selection */}
-                                <div className="mb-3">
-                                    <label className="form-label fw-bold small text-dark">Select Payment Method</label>
-                                    <div className="d-grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                                        {[
-                                            { id: 'cash', label: 'Cash (Birr)', icon: 'bi-cash' },
-                                            { id: 'telebirr', label: 'Telebirr', icon: 'bi-phone' },
-                                            { id: 'cbe_birr', label: 'CBE Birr', icon: 'bi-bank' },
-                                            { id: 'card', label: 'Card / POS', icon: 'bi-credit-card' },
-                                        ].map(pm => (
-                                            <button
-                                                key={pm.id}
-                                                type="button"
-                                                onClick={() => setSettlePaymentMethod(pm.id)}
-                                                className={`btn btn-sm p-2 text-start d-flex align-items-center gap-2 border fw-bold ${
-                                                    settlePaymentMethod === pm.id ? 'btn-primary text-white' : 'btn-light text-dark'
-                                                }`}
-                                            >
-                                                <i className={`bi ${pm.icon} fs-5`}></i>
-                                                <span>{pm.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
+                                <div className="d-flex flex-wrap gap-1 mb-3">
+                                    {[
+                                        { id: 'cash', label: 'Cash' },
+                                        { id: 'telebirr', label: 'Telebirr' },
+                                        { id: 'cbe_birr', label: 'CBE Birr' },
+                                        { id: 'card', label: 'Card' },
+                                    ].map(pm => (
+                                        <button
+                                            key={pm.id}
+                                            type="button"
+                                            onClick={() => setSettlePaymentMethod(pm.id)}
+                                            className={`btn btn-sm flex-fill fw-bold ${
+                                                settlePaymentMethod === pm.id ? 'btn-primary' : 'btn-outline-secondary'
+                                            }`}
+                                        >
+                                            {pm.label}
+                                        </button>
+                                    ))}
                                 </div>
 
-                                {/* Cash Tendered & Change */}
                                 <div className="mb-3">
-                                    <label className="form-label fw-bold small text-dark">Amount Tendered (Birr)</label>
+                                    <div className="d-flex justify-content-between align-items-center mb-1">
+                                        <label className="form-label fw-bold small mb-0">Tendered</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSettleAmountTendered(parseFloat(orderToSettle.total_amount).toFixed(2))}
+                                            className="btn btn-link btn-sm p-0"
+                                        >
+                                            Exact
+                                        </button>
+                                    </div>
                                     <input
                                         type="number"
                                         step="0.01"
                                         value={settleAmountTendered}
                                         onChange={e => setSettleAmountTendered(e.target.value)}
-                                        placeholder={`ETB ${parseFloat(orderToSettle.total_amount).toFixed(2)}`}
-                                        className="form-control font-mono fw-bold fs-5 text-end"
+                                        placeholder={parseFloat(orderToSettle.total_amount).toFixed(2)}
+                                        className="form-control font-mono fw-bold text-end"
                                     />
-                                    {/* Quick Denominations */}
-                                    <div className="d-flex gap-1 mt-1.5 overflow-x-auto">
-                                        <button 
-                                            type="button" 
-                                            onClick={() => setSettleAmountTendered(parseFloat(orderToSettle.total_amount).toFixed(2))} 
-                                            className="btn btn-xs btn-outline-secondary"
-                                        >
-                                            Exact
-                                        </button>
-                                        {[50, 100, 200, 500, 1000].map(add => (
-                                            <button 
-                                                key={add}
-                                                type="button" 
-                                                onClick={() => setSettleAmountTendered((parseFloat(settleAmountTendered || 0) + add).toFixed(2))} 
-                                                className="btn btn-xs btn-outline-secondary"
-                                            >
-                                                +{add}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    {settleAmountTendered && parseFloat(settleAmountTendered) >= parseFloat(orderToSettle.total_amount) && (
+                                        <div className="d-flex justify-content-between small mt-2">
+                                            <span className="text-muted">Change</span>
+                                            <strong className="font-mono">
+                                                ETB {(parseFloat(settleAmountTendered) - parseFloat(orderToSettle.total_amount)).toFixed(2)}
+                                            </strong>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {settleAmountTendered && parseFloat(settleAmountTendered) >= parseFloat(orderToSettle.total_amount) && (
-                                    <div className="p-2.5 bg-light rounded-2 border mb-3 d-flex justify-content-between align-items-center">
-                                        <span className="fw-bold text-muted">Change to Return:</span>
-                                        <strong className="fs-5 text-primary font-mono">
-                                            ETB {(parseFloat(settleAmountTendered) - parseFloat(orderToSettle.total_amount)).toFixed(2)}
-                                        </strong>
-                                    </div>
-                                )}
-
-                                {/* Thermal Receipt Checkbox */}
-                                <div className="form-check form-switch mb-3">
+                                <div className="form-check mb-3">
                                     <input
                                         className="form-check-input"
                                         type="checkbox"
@@ -2268,8 +2356,8 @@ export default function PosApp({ initialData }) {
                                         checked={printReceiptOnSettle}
                                         onChange={e => setPrintReceiptOnSettle(e.target.checked)}
                                     />
-                                    <label className="form-check-label small text-muted" htmlFor="printReceiptToggle">
-                                        Print Settlement Receipt on Thermal Printer (IRP 200D)
+                                    <label className="form-check-label small" htmlFor="printReceiptToggle">
+                                        Print receipt
                                     </label>
                                 </div>
 
@@ -2277,9 +2365,9 @@ export default function PosApp({ initialData }) {
                                     type="button"
                                     onClick={handleConfirmSettleOrder}
                                     disabled={isSubmitting}
-                                    className="btn btn-success fw-bold w-100 py-2.5 fs-6 shadow-sm"
+                                    className="btn btn-success fw-bold w-100"
                                 >
-                                    {isSubmitting ? 'Processing Payment...' : 'Confirm Payment & Free Table'}
+                                    {isSubmitting ? 'Paying...' : 'Pay'}
                                 </button>
                             </div>
                         </div>

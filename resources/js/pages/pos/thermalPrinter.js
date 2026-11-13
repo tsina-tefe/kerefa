@@ -72,9 +72,9 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
     let itemsHtml = '';
     if (order.items && order.items.length > 0) {
         order.items.forEach(it => {
-            const name = it.menu_item?.name || 'Item';
-            const price = parseFloat(it.unit_price || 0).toFixed(2);
-            const total = parseFloat(it.total_price || (it.quantity * it.unit_price) || 0).toFixed(2);
+            if (it.status === 'cancelled') return;
+            const name = it.name || it.menu_item?.name || 'Item';
+            const total = parseFloat(it.subtotal || it.total_price || (it.quantity * it.unit_price) || 0).toFixed(2);
             itemsHtml += `
                 <tr>
                     <td class="irp200d-item-qty">${it.quantity}</td>
@@ -84,6 +84,10 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
             `;
         });
     }
+
+    const subtotal = parseFloat(order.subtotal || 0);
+    const serviceCharge = parseFloat(order.service_charge_amount || 0);
+    const vat = parseFloat(order.tax_amount || 0);
 
     return `
         <div class="irp200d-ticket-header">
@@ -116,8 +120,20 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
             </tbody>
         </table>
         <div style="border-top: 1px dashed #000; margin: 6px 0; padding-top: 4px;">
+            <div class="irp200d-meta-row">
+                <span>SUBTOTAL:</span>
+                <span>ETB ${subtotal.toFixed(2)}</span>
+            </div>
+            <div class="irp200d-meta-row">
+                <span>SERVICE CHARGE:</span>
+                <span>ETB ${serviceCharge.toFixed(2)}</span>
+            </div>
+            <div class="irp200d-meta-row">
+                <span>VAT:</span>
+                <span>ETB ${vat.toFixed(2)}</span>
+            </div>
             <div class="irp200d-meta-row" style="font-size: 13px;">
-                <span><strong>TOTAL DUE:</strong></span>
+                <span><strong>TOTAL:</strong></span>
                 <span><strong>ETB ${totalAmount.toFixed(2)}</strong></span>
             </div>
             <div class="irp200d-meta-row">

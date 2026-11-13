@@ -9,10 +9,12 @@ interface TerminalProps {
     recentOrders: unknown[];
     waiters: unknown[];
     csrfToken: string;
+    serviceChargeRate: number;
+    vatRate: number;
     routes: Record<string, string>;
 }
 
-export default function PosTerminal({ branch, categories, diningAreas, recentOrders, waiters, csrfToken, routes }: TerminalProps) {
+export default function PosTerminal({ branch, categories, diningAreas, recentOrders, waiters, csrfToken, serviceChargeRate, vatRate, routes }: TerminalProps) {
     const { auth, name } = usePage<SharedData>().props;
     const role = auth.roles?.[0] ?? 'Staff';
 
@@ -37,6 +39,8 @@ export default function PosTerminal({ branch, categories, diningAreas, recentOrd
                     waiters,
                     routes,
                     csrfToken,
+                    serviceChargeRate,
+                    vatRate,
                     appName: name || 'Kerefa',
                     permissions: auth.roles?.includes('super-admin') ? ['*'] : auth.permissions,
                 }}

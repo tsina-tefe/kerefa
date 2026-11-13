@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DiningArea;
 use App\Models\MenuCategory;
 use App\Models\Order;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\BranchContextService;
 use App\Services\OrderRoutingService;
@@ -91,6 +92,8 @@ class PosController extends Controller
             'diningAreas' => $areas,
             'recentOrders' => $recentOrders,
             'waiters' => $waiters,
+            'serviceChargeRate' => (float) SystemSetting::get('service_charge_rate', 10, $branchId),
+            'vatRate' => (float) SystemSetting::get('vat_rate', 15, $branchId),
             'csrfToken' => csrf_token(),
             'routes' => [
                 'storeOrder' => route('pos.orders.store'),

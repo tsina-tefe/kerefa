@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OrderStatusHistory extends Model
 {
+    protected $table = 'order_status_history';
+
     public const UPDATED_AT = null;
 
     /**

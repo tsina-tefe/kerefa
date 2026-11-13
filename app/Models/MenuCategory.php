@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -53,5 +54,16 @@ class MenuCategory extends Model
     public function menuItems(): HasMany
     {
         return $this->hasMany(MenuItem::class, 'category_id');
+    }
+
+    /**
+     * @param  Builder<MenuCategory>  $query
+     * @return Builder<MenuCategory>
+     */
+    public function scopeForBranch($query, ?int $branchId)
+    {
+        return $query->where(function ($inner) use ($branchId) {
+            $inner->where('branch_id', $branchId)->orWhereNull('branch_id');
+        });
     }
 }

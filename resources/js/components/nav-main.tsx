@@ -76,11 +76,18 @@ function NavSectionBlock({ section, visibleItems }: { section: NavSection; visib
                             <SidebarMenuSub>
                                 {visibleItems.map((item) => (
                                     <SidebarMenuSubItem key={`${section.label}-${item.title}`}>
-                                        <SidebarMenuSubButton asChild isActive={isNavItemActive(page.url, item.url)}>
-                                            <Link href={item.url} prefetch>
-                                                {item.icon && <item.icon />}
-                                                <span>{item.title}</span>
-                                            </Link>
+                                        <SidebarMenuSubButton asChild isActive={!item.external && isNavItemActive(page.url, item.url)}>
+                                            {item.external ? (
+                                                <a href={item.url} target="_blank" rel="noopener noreferrer">
+                                                    {item.icon && <item.icon />}
+                                                    <span>{item.title}</span>
+                                                </a>
+                                            ) : (
+                                                <Link href={item.url} prefetch>
+                                                    {item.icon && <item.icon />}
+                                                    <span>{item.title}</span>
+                                                </Link>
+                                            )}
                                         </SidebarMenuSubButton>
                                     </SidebarMenuSubItem>
                                 ))}

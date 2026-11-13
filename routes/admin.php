@@ -10,6 +10,10 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SystemSettingController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ModulePlaceholderController;
+use App\Http\Controllers\Pos\MenuController;
+use App\Http\Controllers\Pos\OrderController;
+use App\Http\Controllers\Pos\PosController;
+use App\Http\Controllers\Pos\TableController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('branches/switch', [BranchContextController::class, 'switch'])->name('branches.switch');
@@ -60,9 +64,37 @@ Route::delete('stations/{station}', [OrderStationController::class, 'destroy'])-
 
 Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
 
-Route::get('menu', ModulePlaceholderController::class)->name('menu.index')->defaults('title', 'Menu & Products');
-Route::get('tables', ModulePlaceholderController::class)->name('tables.index')->defaults('title', 'Table Floor Plan');
-Route::get('orders', ModulePlaceholderController::class)->name('orders.index')->defaults('title', 'Orders');
-Route::get('pos', ModulePlaceholderController::class)->name('pos.terminal')->defaults('title', 'POS Terminal');
+Route::get('menu', [MenuController::class, 'index'])->name('menu.index');
+Route::get('menu/create', [MenuController::class, 'create'])->name('menu.create');
+Route::post('menu', [MenuController::class, 'store'])->name('menu.store');
+Route::get('menu/{menuItem}/edit', [MenuController::class, 'edit'])->name('menu.edit');
+Route::put('menu/{menuItem}', [MenuController::class, 'update'])->name('menu.update');
+Route::delete('menu/{menuItem}', [MenuController::class, 'destroy'])->name('menu.destroy');
+Route::post('menu/{menuItem}/toggle-availability', [MenuController::class, 'toggleAvailability'])->name('menu.toggle-availability');
+Route::post('menu/{menuItem}/toggle-favorite', [MenuController::class, 'toggleFavorite'])->name('menu.toggle-favorite');
+Route::post('menu-categories', [MenuController::class, 'storeCategory'])->name('menu-categories.store');
+Route::put('menu-categories/{menuCategory}', [MenuController::class, 'updateCategory'])->name('menu-categories.update');
+Route::delete('menu-categories/{menuCategory}', [MenuController::class, 'destroyCategory'])->name('menu-categories.destroy');
+Route::get('tables', [TableController::class, 'index'])->name('tables.index');
+Route::post('dining-areas', [TableController::class, 'storeArea'])->name('dining-areas.store');
+Route::put('dining-areas/{diningArea}', [TableController::class, 'updateArea'])->name('dining-areas.update');
+Route::delete('dining-areas/{diningArea}', [TableController::class, 'destroyArea'])->name('dining-areas.destroy');
+Route::post('tables', [TableController::class, 'store'])->name('tables.store');
+Route::put('tables/{restaurantTable}', [TableController::class, 'update'])->name('tables.update');
+Route::delete('tables/{restaurantTable}', [TableController::class, 'destroy'])->name('tables.destroy');
+Route::post('tables/{restaurantTable}/transfer', [TableController::class, 'transfer'])->name('tables.transfer');
+Route::post('tables/{restaurantTable}/merge', [TableController::class, 'merge'])->name('tables.merge');
+
+Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
+Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+Route::post('orders/{order}/items', [OrderController::class, 'addItems'])->name('orders.items.store');
+Route::post('orders/{order}/settle', [OrderController::class, 'settle'])->name('orders.settle');
+Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
+
+Route::get('pos', [PosController::class, 'terminal'])->name('pos.terminal');
+Route::post('pos/orders', [PosController::class, 'storeOrder'])->name('pos.orders.store');
+Route::post('pos/orders/{order}/add-items', [OrderController::class, 'addItems'])->name('pos.orders.add-items');
+Route::post('pos/orders/{order}/edit', [OrderController::class, 'updateOpen'])->name('pos.orders.update');
+Route::post('pos/orders/{order}/settle', [OrderController::class, 'settle'])->name('pos.orders.settle.json');
 Route::get('inventory', ModulePlaceholderController::class)->name('inventory.index')->defaults('title', 'Stock & Inventory');
 Route::get('procurement', ModulePlaceholderController::class)->name('procurement.index')->defaults('title', 'Procurement');

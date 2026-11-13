@@ -28,6 +28,7 @@ export interface NavItem {
     icon?: LucideIcon | null;
     isActive?: boolean;
     permission?: string;
+    external?: boolean;
 }
 
 export interface NavSection {

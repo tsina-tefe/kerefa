@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,6 +24,7 @@ class MenuItem extends Model
         'preparation_department',
         'image_path',
         'is_available',
+        'is_favorite',
         'is_active',
         'recipe_enabled',
     ];
@@ -36,6 +38,7 @@ class MenuItem extends Model
             'price' => 'decimal:4',
             'cost_price' => 'decimal:4',
             'is_available' => 'boolean',
+            'is_favorite' => 'boolean',
             'is_active' => 'boolean',
             'recipe_enabled' => 'boolean',
         ];
@@ -71,5 +74,27 @@ class MenuItem extends Model
     public function recipes(): HasMany
     {
         return $this->hasMany(Recipe::class);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function preparationDepartments(): array
+    {
+        return [
+            'kitchen' => 'Kitchen',
+            'bar' => 'Bar',
+        ];
+    }
+
+    /**
+     * @param  Builder<MenuItem>  $query
+     * @return Builder<MenuItem>
+     */
+    public function scopeForBranch($query, ?int $branchId)
+    {
+        return $query->where(function ($inner) use ($branchId) {
+            $inner->where('branch_id', $branchId)->orWhereNull('branch_id');
+        });
     }
 }

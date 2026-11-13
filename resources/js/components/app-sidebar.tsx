@@ -16,7 +16,7 @@ const sections: NavSection[] = [
         label: 'POS Management',
         icon: ShoppingCart,
         items: [
-            { title: 'POS Terminal', url: '/pos', icon: ShoppingCart, permission: 'pos.view' },
+            { title: 'POS Terminal', url: '/pos', icon: ShoppingCart, permission: 'pos.view', external: true },
             { title: 'Table Floor Plan', url: '/tables', icon: LayoutGrid, permission: 'pos.view' },
             { title: 'Orders', url: '/orders', icon: Receipt, permission: 'pos.view' },
             { title: 'Menu & Products', url: '/menu', icon: UtensilsCrossed, permission: 'pos.menu.manage' },

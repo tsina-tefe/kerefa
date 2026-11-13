@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class RestaurantTable extends Model
 {
@@ -61,5 +62,29 @@ class RestaurantTable extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    /**
+     * @return HasOne<Order, $this>
+     */
+    public function activeOrder(): HasOne
+    {
+        return $this->hasOne(Order::class)->ofMany(
+            ['id' => 'max'],
+            fn ($query) => $query->whereNotIn('status', ['completed', 'cancelled']),
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function statuses(): array
+    {
+        return [
+            'available' => 'Available',
+            'occupied' => 'Occupied',
+            'reserved' => 'Reserved',
+            'maintenance' => 'Maintenance',
+        ];
     }
 }

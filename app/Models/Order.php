@@ -112,4 +112,56 @@ class Order extends Model
     {
         return $this->hasMany(OrderStatusHistory::class);
     }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    public function isOpen(): bool
+    {
+        return ! in_array($this->status, ['completed', 'cancelled'], true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function statuses(): array
+    {
+        return [
+            'in_preparation' => 'In preparation',
+            'completed' => 'Completed',
+            'cancelled' => 'Cancelled',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function types(): array
+    {
+        return [
+            'dine_in' => 'Dine in',
+            'takeaway' => 'Takeaway',
+            'delivery' => 'Delivery',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function paymentMethods(): array
+    {
+        return [
+            'cash' => 'Cash',
+            'telebirr' => 'Telebirr',
+            'cbe_birr' => 'CBE Birr',
+            'card' => 'Card',
+            'room_charge' => 'Room charge',
+            'other' => 'Other',
+        ];
+    }
 }

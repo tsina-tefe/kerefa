@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -36,6 +37,40 @@ class OrderItem extends Model
             'unit_price' => 'decimal:4',
             'subtotal' => 'decimal:4',
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function statuses(): array
+    {
+        return [
+            'sent' => 'Sent',
+            'voided' => 'Voided',
+            'cancelled' => 'Cancelled',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function inactiveStatuses(): array
+    {
+        return ['voided', 'cancelled'];
+    }
+
+    public function isActive(): bool
+    {
+        return ! in_array($this->status, self::inactiveStatuses(), true);
+    }
+
+    /**
+     * @param  Builder<OrderItem>  $query
+     * @return Builder<OrderItem>
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->whereNotIn('status', self::inactiveStatuses());
     }
 
     /**

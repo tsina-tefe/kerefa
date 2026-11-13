@@ -502,7 +502,7 @@ export default function PosApp({ initialData }) {
             stationName: it.preparation_department === 'bar' ? 'Central Bar' : 'Main Kitchen',
             notes: it.special_instructions || '',
             isExistingItem: true,
-            voided: it.status === 'cancelled'
+            voided: it.status === 'cancelled' || it.status === 'voided'
         })).sort((left, right) => Number(Boolean(left.voided)) - Number(Boolean(right.voided)));
 
         setCart(existingCartItems);
@@ -2417,9 +2417,9 @@ export default function PosApp({ initialData }) {
                                         </thead>
                                         <tbody>
                                             {[...(selectedReferenceOrder.items || [])]
-                                                .sort((left, right) => Number(left.status === 'cancelled') - Number(right.status === 'cancelled') || left.id - right.id)
+                                                .sort((left, right) => Number(left.status === 'cancelled' || left.status === 'voided') - Number(right.status === 'cancelled' || right.status === 'voided') || left.id - right.id)
                                                 .map(it => (
-                                                <tr key={it.id} className={it.status === 'cancelled' ? 'pos-voided-row' : ''}>
+                                                <tr key={it.id} className={it.status === 'cancelled' || it.status === 'voided' ? 'pos-voided-row' : ''}>
                                                     <td>{it.name || (it.menu_item ? it.menu_item.name : 'Item')}</td>
                                                     <td className="text-center font-mono">{it.quantity}</td>
                                                     <td className="text-end font-mono">{parseFloat(it.unit_price).toFixed(2)}</td>

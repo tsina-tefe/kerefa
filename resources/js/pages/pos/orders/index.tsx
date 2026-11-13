@@ -43,19 +43,27 @@ export default function OrdersIndex({
     filters,
     statuses,
     types,
+    grand_total,
 }: {
     orders: Paginator<OrderRow>;
-    filters: { search: string; status: string; order_type: string };
+    filters: { search: string; status: string; order_type: string; date_from: string; date_to: string };
+    grand_total: number | null;
     statuses: Record<string, string>;
     types: Record<string, string>;
 }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [status, setStatus] = useState(filters.status ?? '');
     const [orderType, setOrderType] = useState(filters.order_type ?? '');
+    const [dateFrom, setDateFrom] = useState(filters.date_from ?? '');
+    const [dateTo, setDateTo] = useState(filters.date_to ?? '');
 
     function submitSearch(event: FormEvent) {
         event.preventDefault();
-        router.get('/orders', { search, status, order_type: orderType }, { preserveState: true, replace: true });
+        router.get(
+            '/orders',
+            { search, status, order_type: orderType, date_from: dateFrom, date_to: dateTo },
+            { preserveState: true, replace: true },
+        );
     }
 
     return (
@@ -83,6 +91,14 @@ export default function OrdersIndex({
                                     </option>
                                 ))}
                             </select>
+                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                                From
+                                <Input className="w-40" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                                To
+                                <Input className="w-40" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                            </label>
                             <Button type="submit" variant="outline">
                                 Search
                             </Button>
@@ -90,10 +106,17 @@ export default function OrdersIndex({
                     </CardHeader>
                     <hr />
                     <CardContent>
+                        {grand_total !== null && (
+                            <div className="mb-3 flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3 dark:bg-slate-800">
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Grand total</span>
+                                <span className="text-xl font-semibold">{money(grand_total)}</span>
+                            </div>
+                        )}
                         <Table>
                             <TableHeader className="bg-slate-500 dark:bg-slate-700">
                                 <TableRow>
                                     <TableHead className="font-bold text-white">Order</TableHead>
+                                    <TableHead className="font-bold text-white">Date</TableHead>
                                     <TableHead className="font-bold text-white">Type</TableHead>
                                     <TableHead className="font-bold text-white">Table</TableHead>
                                     <TableHead className="font-bold text-white">Waiter</TableHead>
@@ -107,6 +130,7 @@ export default function OrdersIndex({
                                 {orders.data.map((order) => (
                                     <TableRow key={order.id} className="odd:bg-slate-100 dark:odd:bg-slate-800">
                                         <TableCell>{order.order_number}</TableCell>
+                                        <TableCell>{order.created_at.slice(0, 10)}</TableCell>
                                         <TableCell>{types[order.order_type] ?? order.order_type}</TableCell>
                                         <TableCell>{order.table?.table_number || order.customer_name || 'N/A'}</TableCell>
                                         <TableCell>{order.waiter?.name || 'N/A'}</TableCell>

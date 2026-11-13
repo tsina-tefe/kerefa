@@ -11,6 +11,7 @@ use App\Models\RestaurantTable;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PosFlowTest extends TestCase
@@ -112,7 +113,7 @@ class PosFlowTest extends TestCase
         ])->assertOk()->assertJsonPath('success', true);
 
         $this->assertEquals(2, (float) $line->fresh()->quantity);
-        $this->assertSame('cancelled', $extra->fresh()->status);
+        $this->assertSame('voided', $extra->fresh()->status);
 
         $this->actingAs($waiter)->postJson("/pos/orders/{$order->id}/edit", [
             'lines' => [
@@ -241,10 +242,59 @@ class PosFlowTest extends TestCase
             'lines' => [],
         ])->assertOk()->assertJsonPath('success', true);
 
-        $this->assertSame('cancelled', $line->fresh()->status);
-        $placeholder = $order->items()->where('status', '!=', 'cancelled')->firstOrFail();
+        $this->assertSame('voided', $line->fresh()->status);
+        $placeholder = $order->items()->active()->firstOrFail();
         $this->assertSame('test-product', $placeholder->name);
         $this->assertEquals(0, (float) $placeholder->unit_price);
         $this->assertEquals(0, (float) $order->fresh()->total_amount);
+    }
+
+    public function test_orders_can_be_filtered_by_a_date_range(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $admin = User::factory()->create();
+        $admin->assignRole('super-admin');
+        $branch = Branch::query()->create([
+            'code' => 'BOLE',
+            'name' => 'Bole',
+            'currency' => 'ETB',
+            'is_active' => true,
+        ]);
+
+        $older = Order::query()->create([
+            'branch_id' => $branch->id,
+            'order_number' => 'ORD-OLD',
+            'total_amount' => 100,
+        ]);
+        $older->forceFill(['created_at' => '2026-11-01 10:00:00'])->save();
+
+        Order::query()->create([
+            'branch_id' => $branch->id,
+            'order_number' => 'ORD-NEW',
+            'total_amount' => 250,
+        ])->forceFill(['created_at' => '2026-11-13 10:00:00'])->save();
+
+        $this->actingAs($admin)
+            ->get('/orders?date_from=2026-11-13&date_to=2026-11-01')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('pos/orders/index')
+                ->where('filters.date_from', '2026-11-01')
+                ->where('filters.date_to', '2026-11-13')
+                ->where('grand_total', 350)
+                ->has('orders.data', 2));
+
+        $this->actingAs($admin)
+            ->get('/orders?date_from=2026-11-13&date_to=2026-11-13')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders.data', 1)
+                ->where('orders.data.0.order_number', 'ORD-NEW')
+                ->where('grand_total', 250));
+
+        $this->actingAs($admin)
+            ->get('/orders')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('grand_total', null));
     }
 }

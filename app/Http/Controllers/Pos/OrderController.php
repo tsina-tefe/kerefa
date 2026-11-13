@@ -27,29 +27,44 @@ class OrderController extends Controller
         $search = $request->string('search')->toString();
         $status = $request->string('status')->toString();
         $orderType = $request->string('order_type')->toString();
+        $dateFrom = $request->string('date_from')->toString();
+        $dateTo = $request->string('date_to')->toString();
 
-        $orders = Order::query()
-            ->with(['table:id,table_number', 'waiter:id,name'])
+        if ($this->isDate($dateFrom) && $this->isDate($dateTo) && $dateFrom > $dateTo) {
+            [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+        }
+
+        $filtered = Order::query()
             ->where('branch_id', $branchId)
             ->when($status !== '', fn ($query) => $query->where('status', $status))
             ->when($orderType !== '', fn ($query) => $query->where('order_type', $orderType))
+            ->when($this->isDate($dateFrom), fn ($query) => $query->whereDate('created_at', '>=', $dateFrom))
+            ->when($this->isDate($dateTo), fn ($query) => $query->whereDate('created_at', '<=', $dateTo))
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($inner) use ($search) {
                     $inner->where('order_number', 'like', "%{$search}%")
                         ->orWhere('customer_name', 'like', "%{$search}%")
                         ->orWhere('customer_phone', 'like', "%{$search}%");
                 });
-            })
+            });
+
+        $dateApplied = $this->isDate($dateFrom) || $this->isDate($dateTo);
+
+        $orders = (clone $filtered)
+            ->with(['table:id,table_number', 'waiter:id,name'])
             ->latest('id')
             ->paginate(10)
             ->withQueryString();
 
         return Inertia::render('pos/orders/index', [
             'orders' => $orders,
+            'grand_total' => $dateApplied ? round((float) (clone $filtered)->sum('total_amount'), 2) : null,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
                 'order_type' => $orderType,
+                'date_from' => $this->isDate($dateFrom) ? $dateFrom : '',
+                'date_to' => $this->isDate($dateTo) ? $dateTo : '',
             ],
             'statuses' => Order::statuses(),
             'types' => Order::types(),
@@ -173,6 +188,13 @@ class OrderController extends Controller
         $this->orders->cancel($order, $request->user(), $validated['reason']);
 
         return back()->with('success', __('Order :number cancelled.', ['number' => $order->order_number]));
+    }
+
+    protected function isDate(string $value): bool
+    {
+        $parsed = \DateTime::createFromFormat('Y-m-d', $value);
+
+        return $parsed instanceof \DateTime && $parsed->format('Y-m-d') === $value;
     }
 
     protected function ensureBranch(Request $request, ?int $branchId): void

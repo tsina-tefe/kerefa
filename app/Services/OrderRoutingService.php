@@ -160,7 +160,7 @@ class OrderRoutingService
                         ]);
                     }
 
-                    $item = $order->items()->whereKey($itemId)->where('status', '!=', 'cancelled')->first();
+                    $item = $order->items()->active()->whereKey($itemId)->first();
 
                     if (! $item) {
                         throw ValidationException::withMessages([
@@ -197,19 +197,19 @@ class OrderRoutingService
             }
 
             $removed = $keptIds === []
-                ? $order->items()->where('status', '!=', 'cancelled')->get()
-                : $order->items()->where('status', '!=', 'cancelled')->whereNotIn('id', $keptIds)->get();
+                ? $order->items()->active()->get()
+                : $order->items()->active()->whereNotIn('id', $keptIds)->get();
 
             foreach ($removed as $item) {
                 $item->update([
-                    'status' => 'cancelled',
+                    'status' => 'voided',
                     'cancelled_by' => $user->id,
-                    'cancellation_reason' => 'Removed while editing the order.',
+                    'cancellation_reason' => 'Voided while editing the order.',
                 ]);
-                TicketItem::query()->where('order_item_id', $item->id)->update(['status' => 'cancelled']);
+                TicketItem::query()->where('order_item_id', $item->id)->update(['status' => 'voided']);
             }
 
-            if (! $order->items()->where('status', '!=', 'cancelled')->exists()) {
+            if (! $order->items()->active()->exists()) {
                 $placeholder = $this->placeholderItem($order);
                 $created[] = $this->addItem($order, [
                     'menu_item_id' => $placeholder->id,
@@ -290,8 +290,12 @@ class OrderRoutingService
                 'cancellation_reason' => $reason,
             ]);
 
-            $order->items()->where('status', '!=', 'cancelled')->update(['status' => 'cancelled']);
+            $order->items()->active()->update(['status' => 'cancelled']);
             $order->tickets()->update(['status' => 'collected']);
+            TicketItem::query()
+                ->whereIn('order_item_id', $order->items()->pluck('id'))
+                ->where('status', '!=', 'voided')
+                ->update(['status' => 'cancelled']);
             $this->releaseTable($order->restaurant_table_id);
             $this->rememberStatus($order, $previous, 'cancelled', $user, $reason);
             $this->auditLog->log('cancel', 'pos', "Cancelled order {$order->order_number}. {$reason}", $order, branchId: $order->branch_id);
@@ -448,7 +452,7 @@ class OrderRoutingService
 
     protected function applyTotals(Order $order): void
     {
-        $subtotal = round((float) $order->items()->where('status', '!=', 'cancelled')->sum('subtotal'), 2);
+        $subtotal = round((float) $order->items()->active()->sum('subtotal'), 2);
         $serviceRate = (float) SystemSetting::get('service_charge_rate', 10, $order->branch_id);
         $vatRate = (float) SystemSetting::get('vat_rate', 15, $order->branch_id);
         $service = $order->order_type === 'dine_in' ? round($subtotal * ($serviceRate / 100), 2) : 0;

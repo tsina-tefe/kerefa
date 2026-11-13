@@ -72,7 +72,7 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
     let itemsHtml = '';
     if (order.items && order.items.length > 0) {
         order.items.forEach(it => {
-            if (it.status === 'cancelled') return;
+            if (it.status === 'cancelled' || it.status === 'voided') return;
             const name = it.name || it.menu_item?.name || 'Item';
             const total = parseFloat(it.subtotal || it.total_price || (it.quantity * it.unit_price) || 0).toFixed(2);
             itemsHtml += `

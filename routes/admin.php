@@ -9,11 +9,12 @@ use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SystemSettingController;
 use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\ModulePlaceholderController;
 use App\Http\Controllers\Pos\MenuController;
 use App\Http\Controllers\Pos\OrderController;
 use App\Http\Controllers\Pos\PosController;
 use App\Http\Controllers\Pos\TableController;
+use App\Http\Controllers\Supply\InventoryController;
+use App\Http\Controllers\Supply\ProcurementController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('branches/switch', [BranchContextController::class, 'switch'])->name('branches.switch');
@@ -96,5 +97,13 @@ Route::post('pos/orders', [PosController::class, 'storeOrder'])->name('pos.order
 Route::post('pos/orders/{order}/add-items', [OrderController::class, 'addItems'])->name('pos.orders.add-items');
 Route::post('pos/orders/{order}/edit', [OrderController::class, 'updateOpen'])->name('pos.orders.update');
 Route::post('pos/orders/{order}/settle', [OrderController::class, 'settle'])->name('pos.orders.settle.json');
-Route::get('inventory', ModulePlaceholderController::class)->name('inventory.index')->defaults('title', 'Stock & Inventory');
-Route::get('procurement', ModulePlaceholderController::class)->name('procurement.index')->defaults('title', 'Procurement');
+Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
+Route::post('inventory-categories', [InventoryController::class, 'storeCategory'])->name('inventory-categories.store');
+Route::put('inventory-categories/{inventoryCategory}', [InventoryController::class, 'updateCategory'])->name('inventory-categories.update');
+Route::post('inventory', [InventoryController::class, 'storeItem'])->name('inventory.store');
+Route::post('inventory/{item}/adjust', [InventoryController::class, 'adjust'])->name('inventory.adjust');
+
+Route::get('procurement', [ProcurementController::class, 'index'])->name('procurement.index');
+Route::post('procurement/suppliers', [ProcurementController::class, 'storeSupplier'])->name('procurement.suppliers.store');
+Route::post('procurement/orders', [ProcurementController::class, 'storeOrder'])->name('procurement.orders.store');
+Route::post('procurement/orders/{purchaseOrder}/receive', [ProcurementController::class, 'receive'])->name('procurement.orders.receive');

@@ -131,21 +131,28 @@ export default function OrderShow({
                             </TableHeader>
                             <TableBody>
                                 {[...order.items]
-                                    .sort((left, right) => Number(left.status === 'cancelled') - Number(right.status === 'cancelled') || left.id - right.id)
+                                    .sort((left, right) => Number(left.status === 'cancelled' || left.status === 'voided') - Number(right.status === 'cancelled' || right.status === 'voided') || left.id - right.id)
                                     .map((item) => {
-                                        const voided = item.status === 'cancelled';
+                                        const inactive = item.status === 'cancelled' || item.status === 'voided';
 
                                         return (
                                             <TableRow
                                                 key={item.id}
                                                 className={
-                                                    voided
+                                                    inactive
                                                         ? 'bg-red-50 text-red-800 line-through odd:bg-red-50 hover:bg-red-100 dark:bg-red-950 dark:text-red-200 dark:odd:bg-red-950 dark:hover:bg-red-900'
                                                         : 'odd:bg-slate-100 dark:odd:bg-slate-800'
                                                 }
                                             >
                                                 <TableCell>
-                                                    <div>{item.name}</div>
+                                                    <div>
+                                                        {item.name}
+                                                        {inactive && (
+                                                            <span className="ml-2 text-xs font-semibold uppercase no-underline">
+                                                                {item.status === 'voided' ? 'Voided' : 'Cancelled'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     {item.modifiers.length > 0 && <div className="text-muted-foreground text-xs">{item.modifiers.map((modifier) => modifier.name).join(', ')}</div>}
                                                     {item.special_instructions && <div className="text-xs">{item.special_instructions}</div>}
                                                 </TableCell>

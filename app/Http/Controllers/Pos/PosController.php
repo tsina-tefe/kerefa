@@ -69,7 +69,7 @@ class PosController extends Controller
                 'items.menuItem:id,name,code',
                 'items.modifiers',
                 'tickets.orderStation:id,name,station_type,printer_model',
-                'tickets.items.orderItem:id,name,special_instructions',
+                'tickets.items.orderItem.menuItem.category:id,name',
             ])
             ->where('branch_id', $branchId)
             ->latest('id')

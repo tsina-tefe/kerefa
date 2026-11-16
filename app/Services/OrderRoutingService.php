@@ -30,7 +30,7 @@ class OrderRoutingService
             'items.menuItem:id,name,code',
             'items.modifiers',
             'tickets.orderStation:id,name,station_type,printer_model',
-            'tickets.items.orderItem:id,name,special_instructions',
+            'tickets.items.orderItem.menuItem.category:id,name',
         ]);
 
         return $order;
@@ -149,6 +149,8 @@ class OrderRoutingService
 
             $keptIds = [];
             $created = [];
+            $quantityChanges = [];
+            $voids = [];
 
             foreach ($data['lines'] as $line) {
                 if (! empty($line['order_item_id'])) {
@@ -168,6 +170,7 @@ class OrderRoutingService
                         ]);
                     }
 
+                    $previousQuantity = (float) $item->quantity;
                     $quantity = (float) $line['quantity'];
                     $modifierUnit = (float) $item->modifiers()->sum('unit_price');
                     $item->update([
@@ -176,10 +179,14 @@ class OrderRoutingService
                         'special_instructions' => $line['notes'] ?? null,
                     ]);
 
-                    TicketItem::query()->where('order_item_id', $item->id)->update([
-                        'quantity' => $quantity,
-                        'special_instructions' => $line['notes'] ?? null,
-                    ]);
+                    $delta = round($quantity - $previousQuantity, 4);
+                    if (abs($delta) >= 0.0001) {
+                        $quantityChanges[] = [
+                            'item' => $item->fresh(),
+                            'quantity' => $delta,
+                            'status' => 'queued',
+                        ];
+                    }
 
                     $keptIds[] = $item->id;
 
@@ -201,12 +208,17 @@ class OrderRoutingService
                 : $order->items()->active()->whereNotIn('id', $keptIds)->get();
 
             foreach ($removed as $item) {
+                $originalQuantity = (float) $item->quantity;
                 $item->update([
                     'status' => 'voided',
                     'cancelled_by' => $user->id,
                     'cancellation_reason' => 'Voided while editing the order.',
                 ]);
-                TicketItem::query()->where('order_item_id', $item->id)->update(['status' => 'voided']);
+                $voids[] = [
+                    'item' => $item->fresh(),
+                    'quantity' => round(-1 * $originalQuantity, 4),
+                    'status' => 'voided',
+                ];
             }
 
             if (! $order->items()->active()->exists()) {
@@ -219,7 +231,13 @@ class OrderRoutingService
 
             $order->save();
             $this->applyTotals($order);
-            $tickets = $created === [] ? [] : $this->routeTickets($order, $created);
+
+            $tickets = array_merge(
+                $created === [] ? [] : $this->routeTickets($order, $created),
+                $this->routeTicketLines($order, $quantityChanges),
+                $this->routeTicketLines($order, $voids),
+            );
+
             $this->rememberStatus($order, $order->status, $order->status, $user, 'Order edited from the POS terminal.');
             $this->auditLog->log('update', 'pos', "Edited order {$order->order_number}", $order, branchId: $order->branch_id);
 
@@ -472,13 +490,38 @@ class OrderRoutingService
      */
     protected function routeTickets(Order $order, array $items): array
     {
+        return $this->routeTicketLines($order, array_map(fn (OrderItem $item) => [
+            'item' => $item,
+            'quantity' => (float) $item->quantity,
+            'status' => 'queued',
+        ], $items));
+    }
+
+    /**
+     * @param  array<int, array{item: OrderItem, quantity: float, status: string}>  $lines
+     * @return array<int, KitchenBarTicket>
+     */
+    protected function routeTicketLines(Order $order, array $lines): array
+    {
+        if ($lines === []) {
+            return [];
+        }
+
         $createdTickets = [];
         $sequence = $order->tickets()->count();
 
-        foreach (collect($items)->groupBy(fn (OrderItem $item) => $item->preparation_department.'|'.$item->order_station_id) as $group) {
+        foreach (collect($lines)->groupBy(function (array $line) {
+            $item = $line['item'];
+
+            return implode('|', [
+                (string) ($item->order_station_id ?? 'none'),
+                (string) $item->preparation_department,
+            ]);
+        }) as $group) {
             $sequence++;
-            /** @var OrderItem $first */
-            $first = $group->first();
+            /** @var array{item: OrderItem, quantity: float, status: string} $firstLine */
+            $firstLine = $group->first();
+            $first = $firstLine['item'];
             $prefix = $first->preparation_department === 'bar' ? 'BTK' : 'KTK';
 
             $ticket = KitchenBarTicket::query()->create([
@@ -491,13 +534,13 @@ class OrderRoutingService
                 'sent_at' => now(),
             ]);
 
-            foreach ($group as $item) {
+            foreach ($group as $line) {
                 TicketItem::query()->create([
                     'ticket_id' => $ticket->id,
-                    'order_item_id' => $item->id,
-                    'quantity' => $item->quantity,
-                    'special_instructions' => $item->special_instructions,
-                    'status' => 'queued',
+                    'order_item_id' => $line['item']->id,
+                    'quantity' => $line['quantity'],
+                    'special_instructions' => $line['item']->special_instructions,
+                    'status' => $line['status'],
                 ]);
             }
 

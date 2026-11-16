@@ -4,10 +4,13 @@ namespace Tests\Feature\Pos;
 
 use App\Models\Branch;
 use App\Models\DiningArea;
+use App\Models\KitchenBarTicket;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\OrderStation;
 use App\Models\RestaurantTable;
+use App\Models\TicketItem;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -170,6 +173,103 @@ class PosFlowTest extends TestCase
         $this->assertSame('available', $other->fresh()->status);
     }
 
+    public function test_editing_prints_separate_void_and_quantity_change_tickets(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $waiter = User::factory()->create();
+        $waiter->assignRole('waiter');
+        $branch = Branch::query()->create([
+            'code' => 'BOLE',
+            'name' => 'Bole',
+            'currency' => 'ETB',
+            'is_active' => true,
+        ]);
+        $waiter->update(['branch_id' => $branch->id]);
+        $category = MenuCategory::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Hot Drinks',
+            'slug' => 'hot-drinks',
+            'is_active' => true,
+        ]);
+        $item = MenuItem::query()->create([
+            'branch_id' => $branch->id,
+            'category_id' => $category->id,
+            'name' => 'Espresso',
+            'price' => 45,
+            'preparation_department' => 'bar',
+            'is_available' => true,
+            'is_active' => true,
+        ]);
+        $area = DiningArea::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Garden',
+            'is_active' => true,
+        ]);
+        $table = RestaurantTable::query()->create([
+            'branch_id' => $branch->id,
+            'dining_area_id' => $area->id,
+            'table_number' => '12',
+            'capacity' => 4,
+            'status' => 'available',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($waiter)->post('/pos/orders', [
+            'order_type' => 'dine_in',
+            'restaurant_table_id' => $table->id,
+            'items' => [
+                ['menu_item_id' => $item->id, 'quantity' => 2],
+                ['menu_item_id' => $item->id, 'quantity' => 1],
+            ],
+        ])->assertRedirect();
+
+        $order = Order::query()->firstOrFail();
+        $kept = $order->items()->orderBy('id')->first();
+        $voided = $order->items()->orderBy('id')->skip(1)->first();
+        $originalTicketQty = TicketItem::query()->where('order_item_id', $kept->id)->sum('quantity');
+
+        $this->actingAs($waiter)->postJson("/pos/orders/{$order->id}/edit", [
+            'lines' => [
+                ['order_item_id' => $kept->id, 'quantity' => 3],
+            ],
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $this->assertEquals(3, (float) $kept->fresh()->quantity);
+        $this->assertSame('voided', $voided->fresh()->status);
+        $this->assertEquals($originalTicketQty, (float) TicketItem::query()->where('order_item_id', $kept->id)->orderBy('id')->value('quantity'));
+
+        $qtyChange = TicketItem::query()
+            ->where('order_item_id', $kept->id)
+            ->where('status', 'queued')
+            ->orderByDesc('id')
+            ->first();
+        $this->assertEquals(1, (float) $qtyChange->quantity);
+
+        $voidTicketItem = TicketItem::query()
+            ->where('order_item_id', $voided->id)
+            ->where('status', 'voided')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($voidTicketItem);
+        $this->assertEquals(-1, (float) $voidTicketItem->quantity);
+        $this->assertNotEquals($qtyChange->ticket_id, $voidTicketItem->ticket_id);
+
+        $this->actingAs($waiter)->postJson("/pos/orders/{$order->id}/edit", [
+            'lines' => [
+                ['order_item_id' => $kept->id, 'quantity' => 1],
+            ],
+        ])->assertOk();
+
+        $decrease = TicketItem::query()
+            ->where('order_item_id', $kept->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertEquals(-2, (float) $decrease->quantity);
+        $this->assertSame('queued', $decrease->status);
+        $this->assertSame('sent', $kept->fresh()->status);
+        $this->assertEquals(4, KitchenBarTicket::query()->where('order_id', $order->id)->count());
+    }
+
     public function test_saving_an_edit_with_no_active_items_adds_the_test_product(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
@@ -296,5 +396,147 @@ class PosFlowTest extends TestCase
             ->get('/orders')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('grand_total', null));
+    }
+
+    public function test_an_order_prints_one_ticket_per_station_not_per_category(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $waiter = User::factory()->create();
+        $waiter->assignRole('waiter');
+        $branch = Branch::query()->create([
+            'code' => 'BOLE',
+            'name' => 'Bole',
+            'currency' => 'ETB',
+            'is_active' => true,
+        ]);
+        $waiter->update(['branch_id' => $branch->id]);
+
+        $kitchen = OrderStation::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Hot Kitchen',
+            'code' => 'HOT',
+            'station_type' => 'kitchen',
+            'is_active' => true,
+        ]);
+        $bar = OrderStation::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Bar',
+            'code' => 'BAR',
+            'station_type' => 'bar',
+            'is_active' => true,
+        ]);
+
+        $breakfast = MenuCategory::query()->create([
+            'branch_id' => $branch->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Breakfast',
+            'slug' => 'breakfast',
+            'is_active' => true,
+        ]);
+        $lunch = MenuCategory::query()->create([
+            'branch_id' => $branch->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Lunch',
+            'slug' => 'lunch',
+            'is_active' => true,
+        ]);
+        $combo = MenuCategory::query()->create([
+            'branch_id' => $branch->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Combo',
+            'slug' => 'combo',
+            'is_active' => true,
+        ]);
+        $coffee = MenuCategory::query()->create([
+            'branch_id' => $branch->id,
+            'order_station_id' => $bar->id,
+            'name' => 'Coffee',
+            'slug' => 'coffee',
+            'is_active' => true,
+        ]);
+
+        $chechebesa = MenuItem::query()->create([
+            'branch_id' => $branch->id,
+            'category_id' => $breakfast->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Chechebesa Special',
+            'price' => 400,
+            'preparation_department' => 'kitchen',
+            'is_available' => true,
+            'is_active' => true,
+        ]);
+        $kitfo = MenuItem::query()->create([
+            'branch_id' => $branch->id,
+            'category_id' => $lunch->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Kitfo',
+            'price' => 930,
+            'preparation_department' => 'kitchen',
+            'is_available' => true,
+            'is_active' => true,
+        ]);
+        $shiroTibs = MenuItem::query()->create([
+            'branch_id' => $branch->id,
+            'category_id' => $combo->id,
+            'order_station_id' => $kitchen->id,
+            'name' => 'Shiro with Tibs',
+            'price' => 825,
+            'preparation_department' => 'kitchen',
+            'is_available' => true,
+            'is_active' => true,
+        ]);
+        $buna = MenuItem::query()->create([
+            'branch_id' => $branch->id,
+            'category_id' => $coffee->id,
+            'order_station_id' => $bar->id,
+            'name' => 'Buna',
+            'price' => 60,
+            'preparation_department' => 'bar',
+            'is_available' => true,
+            'is_active' => true,
+        ]);
+
+        $area = DiningArea::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Garden',
+            'is_active' => true,
+        ]);
+        $table = RestaurantTable::query()->create([
+            'branch_id' => $branch->id,
+            'dining_area_id' => $area->id,
+            'table_number' => '12',
+            'capacity' => 4,
+            'status' => 'available',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($waiter)->postJson('/pos/orders', [
+            'order_type' => 'dine_in',
+            'restaurant_table_id' => $table->id,
+            'items' => [
+                ['menu_item_id' => $chechebesa->id, 'quantity' => 1],
+                ['menu_item_id' => $kitfo->id, 'quantity' => 1],
+                ['menu_item_id' => $shiroTibs->id, 'quantity' => 1],
+                ['menu_item_id' => $buna->id, 'quantity' => 2],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertCount(2, $response->json('order.tickets'));
+        $this->assertEquals(2, KitchenBarTicket::query()->count());
+
+        $kitchenTicket = collect($response->json('order.tickets'))->firstWhere('order_station_id', $kitchen->id);
+        $barTicket = collect($response->json('order.tickets'))->firstWhere('order_station_id', $bar->id);
+
+        $this->assertNotNull($kitchenTicket);
+        $this->assertNotNull($barTicket);
+        $this->assertNotSame($kitchenTicket['ticket_number'], $barTicket['ticket_number']);
+        $this->assertCount(3, $kitchenTicket['items']);
+        $this->assertCount(1, $barTicket['items']);
+
+        $kitchenNames = collect($kitchenTicket['items'])->map(fn ($row) => $row['order_item']['name'])->sort()->values()->all();
+        $this->assertSame(['Chechebesa Special', 'Kitfo', 'Shiro with Tibs'], $kitchenNames);
+        $this->assertSame('Buna', $barTicket['items'][0]['order_item']['name']);
+        $this->assertEquals(2, (float) $barTicket['items'][0]['quantity']);
     }
 }

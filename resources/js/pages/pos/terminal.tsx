@@ -41,7 +41,7 @@ export default function PosTerminal({ branch, categories, diningAreas, recentOrd
                     csrfToken,
                     serviceChargeRate,
                     vatRate,
-                    appName: name || 'Kerefa',
+                    appName: name || 'QEREFA',
                     permissions: auth.roles?.includes('super-admin') ? ['*'] : auth.permissions,
                 }}
             />

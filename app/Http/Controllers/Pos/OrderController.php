@@ -83,6 +83,7 @@ class OrderController extends Controller
             'cancelledBy:id,name',
             'items.modifiers',
             'tickets.orderStation:id,name',
+            'tickets.items.orderItem.menuItem.category:id,name',
             'payments.receiver:id,name',
             'statusHistory.changedBy:id,name',
         ]);

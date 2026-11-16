@@ -5,6 +5,22 @@ function roundMoney(value) {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function roundQty(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
+}
+
+function parseQtyInput(raw) {
+    const trimmed = String(raw ?? '').trim().replace(',', '.');
+    if (trimmed === '' || trimmed === '.' || trimmed === '-' || trimmed === '-.') {
+        return { ok: false };
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+        return { ok: false };
+    }
+    return { ok: true, value: roundQty(parsed) };
+}
+
 function referenceStatusLabel(status) {
     if (status === 'completed') {
         return { label: 'PAID / SETTLED', short: 'PAID', className: 'bg-success' };
@@ -67,7 +83,7 @@ export default function PosApp({ initialData }) {
     const waitersList = initialData.waiters || [];
     const routes = initialData.routes || {};
     const csrfToken = initialData.csrfToken || '';
-    const appName = initialData.appName || 'Kerefa Restaurant';
+    const appName = initialData.appName || 'QEREFA';
     const serviceChargeRate = Number(initialData.serviceChargeRate ?? 10);
     const vatRate = Number(initialData.vatRate ?? 15);
 
@@ -102,8 +118,6 @@ export default function PosApp({ initialData }) {
         return () => window.removeEventListener('resize', measure);
     }, [activeTopTab]);
 
-    // REFERENCE Sub-Navigation Tabs: 'Orders' | 'BILL SETTLEMENT'
-    const [referenceSubTab, setReferenceSubTab] = useState('Orders');
     const [selectedReferenceOrder, setSelectedReferenceOrder] = useState(null);
 
     // Category / Item Navigation
@@ -121,6 +135,8 @@ export default function PosApp({ initialData }) {
     // Items structure: { id, name, code, price, quantity, stationType, stationName, notes, isExistingItem: bool }
     const [cart, setCart] = useState([]);
     const [selectedCartItemId, setSelectedCartItemId] = useState(null);
+    const [qtyDrafts, setQtyDrafts] = useState({});
+    const qtySkipCommitRef = useRef(new Set());
 
     // Active Held Order Editing State (when adding products to a held order)
     const [editingOrder, setEditingOrder] = useState(null); // null or Order object
@@ -156,31 +172,59 @@ export default function PosApp({ initialData }) {
         frame.setAttribute('style', 'position:absolute;width:0;height:0;border:none;visibility:hidden;');
         document.body.appendChild(frame);
 
-        window.printIrp200dTicket = (ticketContentHtml) => {
-            const doc = frame.contentWindow?.document;
-            if (!doc) return;
-            doc.open();
-            doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>IRP 200D</title><style>
+        const printQueue = [];
+        let printBusy = false;
+        const printStyles = `
                 @page { size: 80mm auto; margin: 0; }
                 * { box-sizing: border-box; }
                 body { width: 72mm; margin: 0 auto; padding: 3mm 0 8mm; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 12px; line-height: 1.25; color: #000; background: #fff; }
                 .irp200d-ticket-header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 2mm; margin-bottom: 2mm; }
                 .irp200d-title { font-size: 16px; font-weight: 800; margin: 0; }
                 .irp200d-banner { font-size: 14px; font-weight: 900; border: 2px solid #000; padding: 3px 2px; margin: 4px 0; text-align: center; }
-                .irp200d-meta-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+                .irp200d-meta-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; gap: 8px; }
+                .irp200d-meta-line { font-size: 11px; margin: 2px 0; word-break: break-word; }
                 .irp200d-items-table { width: 100%; border-collapse: collapse; margin: 2mm 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
                 .irp200d-items-table th { font-size: 11px; text-transform: uppercase; border-bottom: 1px dashed #000; padding: 3px 0; text-align: left; }
+                .irp200d-items-table th.irp200d-item-qty { text-align: right; }
+                .irp200d-items-table th.irp200d-qty-start { text-align: left; }
                 .irp200d-items-table td { padding: 3px 0; vertical-align: top; }
-                .irp200d-item-qty { font-size: 15px; font-weight: 800; width: 28px; }
-                .irp200d-item-name { font-size: 13px; font-weight: 700; }
-                .irp200d-item-notes { font-size: 11px; font-style: italic; padding-left: 10px; font-weight: 600; }
+                .irp200d-item-name { font-size: 13px; font-weight: 700; text-align: left; padding-left: 8px; }
+                .irp200d-item-qty { font-size: 15px; font-weight: 800; width: 42px; white-space: nowrap; text-align: right; }
+                .irp200d-qty-start { width: 52px; white-space: nowrap; text-align: left; padding-right: 10px; font-size: 15px; font-weight: 800; }
+                .irp200d-item-notes { font-size: 11px; font-style: italic; font-weight: 600; text-align: left; white-space: normal; word-break: break-word; }
+                .irp200d-item-void { text-decoration: line-through; color: #000; background: transparent; }
                 .irp200d-cutter-feed { height: 12mm; border-bottom: 1px dotted #888; margin-top: 4mm; text-align: center; font-size: 9px; }
-            </style></head><body>${ticketContentHtml}</body></html>`);
+        `;
+
+        const drainPrintQueue = () => {
+            if (printBusy || printQueue.length === 0) {
+                return;
+            }
+
+            printBusy = true;
+            const ticketContentHtml = printQueue.shift();
+            const doc = frame.contentWindow?.document;
+            if (!doc) {
+                printBusy = false;
+                return;
+            }
+
+            doc.open();
+            doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>IRP 200D</title><style>${printStyles}</style></head><body>${ticketContentHtml}</body></html>`);
             doc.close();
             window.setTimeout(() => {
                 frame.contentWindow?.focus();
                 frame.contentWindow?.print();
-            }, 300);
+                window.setTimeout(() => {
+                    printBusy = false;
+                    drainPrintQueue();
+                }, 700);
+            }, 250);
+        };
+
+        window.printIrp200dTicket = (ticketContentHtml) => {
+            printQueue.push(ticketContentHtml);
+            drainPrintQueue();
         };
 
         return () => {
@@ -325,6 +369,12 @@ export default function PosApp({ initialData }) {
         });
 
         if (existing) {
+            setQtyDrafts(prev => {
+                if (!(existing.id in prev)) return prev;
+                const next = { ...prev };
+                delete next[existing.id];
+                return next;
+            });
             setCart(prev => prev.map(ci => ci.id === existing.id ? { ...ci, quantity: Number(ci.quantity) + 1 } : ci));
             setSelectedCartItemId(existing.id);
             addToast(
@@ -360,9 +410,19 @@ export default function PosApp({ initialData }) {
         addToast('Item Added', `${item.name} added to docket`, 'success');
     }, [addToast, cart, orderEditMode]);
 
+    const clearQtyDraft = useCallback((itemId) => {
+        setQtyDrafts(prev => {
+            if (!(itemId in prev)) return prev;
+            const next = { ...prev };
+            delete next[itemId];
+            return next;
+        });
+    }, []);
+
     // Update quantity
     const updateQuantity = useCallback((itemId, delta) => {
         playPosSound('add');
+        clearQtyDraft(itemId);
         setCart(prev => {
             return prev.map(item => {
                 if (item.id === itemId) {
@@ -372,13 +432,59 @@ export default function PosApp({ initialData }) {
                         return item;
                     }
                     const newQty = item.quantity + delta;
+                    if (item.isExistingItem && newQty <= 0) {
+                        addToast('Use VOID', 'Use VOID to cancel a sent item. Quantity cannot go to zero.', 'warning');
+                        return item;
+                    }
                     return newQty > 0 ? { ...item, quantity: newQty } : null;
                 }
                 return item;
             }).filter(Boolean);
         });
         setSelectedCartItemId(itemId);
-    }, [addToast, orderEditMode]);
+    }, [addToast, orderEditMode, clearQtyDraft]);
+
+    const commitLineQuantity = useCallback((itemId, raw) => {
+        if (qtySkipCommitRef.current.has(itemId)) {
+            qtySkipCommitRef.current.delete(itemId);
+            return;
+        }
+
+        const parsed = parseQtyInput(raw);
+        clearQtyDraft(itemId);
+
+        setCart(prev => {
+            const current = prev.find(item => item.id === itemId);
+            if (!current || current.voided) {
+                return prev;
+            }
+            if (current.isExistingItem && !orderEditMode) {
+                addToast('Notice', 'Cannot modify quantity of already sent items. Add new line instead.', 'warning');
+                return prev;
+            }
+            if (!parsed.ok || parsed.value < 0) {
+                addToast('Invalid quantity', 'Enter a number such as 0.5 or 2.', 'warning');
+                return prev;
+            }
+            if (parsed.value < 0.01) {
+                if (current.isExistingItem) {
+                    addToast('Use VOID', 'Use VOID to cancel a sent item. Quantity cannot go to zero.', 'warning');
+                    return prev;
+                }
+                playPosSound('void');
+                const updated = prev.filter(item => item.id !== itemId);
+                const active = updated.filter(item => !item.voided);
+                setSelectedCartItemId(active.length > 0 ? active[active.length - 1].id : null);
+                return updated;
+            }
+            if (parsed.value === roundQty(current.quantity)) {
+                return prev;
+            }
+            playPosSound('add');
+            return prev.map(item => item.id === itemId ? { ...item, quantity: parsed.value } : item);
+        });
+        setSelectedCartItemId(itemId);
+    }, [addToast, orderEditMode, clearQtyDraft]);
 
     // VOID ACTION: Asks before removing the selected line.
     const voidSelectedItem = useCallback(() => {
@@ -462,6 +568,13 @@ export default function PosApp({ initialData }) {
         setActiveTopTab('RMS');
     }, [addToast]);
 
+    const openSettleModal = useCallback((order) => {
+        if (!order) return;
+        setOrderToSettle(order);
+        setShowRetrieveModal(false);
+        setShowSettleModal(true);
+    }, []);
+
     // Select Waiter Action (From HR Waiter Department)
     const handleSelectWaiter = useCallback((waiter) => {
         setSelectedWaiter(waiter);
@@ -508,7 +621,6 @@ export default function PosApp({ initialData }) {
         setCart(existingCartItems);
         setSelectedCartItemId(existingCartItems[0]?.id || null);
         setShowRetrieveModal(false);
-        setActiveTopTab('CATEGORY');
         addToast(
             editable ? 'Editing Order' : 'Order Loaded',
             editable
@@ -765,7 +877,6 @@ export default function PosApp({ initialData }) {
             setSelectedTable(null);
 
             setSelectedReferenceOrder(newOrder);
-            setReferenceSubTab('Orders');
             setActiveTopTab('REFERENCE');
 
         } catch (err) {
@@ -1550,28 +1661,6 @@ export default function PosApp({ initialData }) {
                 </div>
             )}
 
-            {activeTopTab === 'REFERENCE' && (
-                <div className="d-flex align-items-center gap-1 p-2 bg-white border-bottom shrink-0 overflow-x-auto shadow-2xs">
-                    <button
-                        type="button"
-                        onClick={() => setReferenceSubTab('Orders')}
-                        className={`pos-subnav-btn rounded-1 ${referenceSubTab === 'Orders' ? 'active' : ''}`}
-                    >
-                        <i className="bi bi-receipt me-1.5"></i>
-                        Orders
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setReferenceSubTab('BILL SETTLEMENT')}
-                        className={`pos-subnav-btn rounded-1 ${referenceSubTab === 'BILL SETTLEMENT' ? 'active' : ''}`}
-                    >
-                        <i className="bi bi-cash-stack me-1.5"></i>
-                        BILL SETTLEMENT (PAID)
-                    </button>
-                </div>
-            )}
-
             {/* Mobile View Toggle Bar (Only visible on small viewports) */}
             <div className={`d-flex d-md-none border-bottom p-1.5 gap-1 shrink-0 ${theme === 'dark' ? 'bg-dark' : 'bg-white'}`}>
                 <button
@@ -1743,7 +1832,40 @@ export default function PosApp({ initialData }) {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="text-center font-mono fw-bold">{item.quantity}</td>
+                                                <td className="text-center" onClick={(e) => e.stopPropagation()}>
+                                                    {item.voided || (item.isExistingItem && !orderEditMode) ? (
+                                                        <span className="font-mono fw-bold">{item.quantity}</span>
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            aria-label={`${item.name} quantity`}
+                                                            className="form-control form-control-sm text-center font-mono fw-bold px-1 py-0"
+                                                            style={{ width: '64px', margin: '0 auto', height: '28px' }}
+                                                            value={qtyDrafts[item.id] ?? String(item.quantity)}
+                                                            onChange={(e) => setQtyDrafts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                                            onFocus={(e) => {
+                                                                setSelectedCartItemId(item.id);
+                                                                setQtyDrafts(prev => ({ ...prev, [item.id]: prev[item.id] ?? String(item.quantity) }));
+                                                                e.target.select();
+                                                            }}
+                                                            onBlur={(e) => commitLineQuantity(item.id, e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                e.stopPropagation();
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    e.currentTarget.blur();
+                                                                }
+                                                                if (e.key === 'Escape') {
+                                                                    e.preventDefault();
+                                                                    qtySkipCommitRef.current.add(item.id);
+                                                                    clearQtyDraft(item.id);
+                                                                    e.currentTarget.blur();
+                                                                }
+                                                            }}
+                                                        />
+                                                    )}
+                                                </td>
                                                 <td className="text-end font-mono">{item.price.toFixed(2)}</td>
                                                 <td className="text-end font-mono fw-bold">{(item.price * item.quantity).toFixed(2)}</td>
                                             </tr>
@@ -1998,7 +2120,7 @@ export default function PosApp({ initialData }) {
                                                                     {(can('finance.view') || can('pos.orders.edit')) && (
                                                                         <button
                                                                             type="button"
-                                                                            onClick={(e) => { e.stopPropagation(); setOrderToSettle(activeOrder); setShowSettleModal(true); }}
+                                                                            onClick={(e) => { e.stopPropagation(); openSettleModal(activeOrder); }}
                                                                             className="btn btn-xs btn-success py-0 flex-fill fw-bold"
                                                                             title="Settle / Paid"
                                                                         >
@@ -2147,8 +2269,7 @@ export default function PosApp({ initialData }) {
                                                 addToast('Order Cancelled', 'This order has been cancelled.', 'warning');
                                                 return;
                                             }
-                                            setOrderToSettle(selectedReferenceOrder);
-                                            setShowSettleModal(true);
+                                            openSettleModal(selectedReferenceOrder);
                                         }}
                                         className="pos-bottom-bar-btn rounded-1 btn-success text-white fw-bold"
                                         style={{ backgroundColor: '#16a34a', borderColor: '#15803d' }}
@@ -2282,7 +2403,7 @@ export default function PosApp({ initialData }) {
 
             {/* Settle / Paid Modal */}
             {showSettleModal && orderToSettle && (
-                <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1080 }}>
                     <div className="modal-dialog modal-dialog-centered modal-sm">
                         <div className="modal-content border shadow-lg">
                             <div className="modal-header py-2">
@@ -2447,10 +2568,7 @@ export default function PosApp({ initialData }) {
                                         {selectedReferenceOrder.status !== 'completed' && selectedReferenceOrder.status !== 'cancelled' && (can('finance.view') || can('pos.orders.edit')) && (
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setOrderToSettle(selectedReferenceOrder);
-                                                    setShowSettleModal(true);
-                                                }}
+                                                onClick={() => openSettleModal(selectedReferenceOrder)}
                                                 className="btn btn-success btn-sm fw-bold"
                                             >
                                                 <i className="bi bi-cash-stack me-1"></i>

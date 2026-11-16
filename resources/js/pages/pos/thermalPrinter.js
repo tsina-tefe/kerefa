@@ -3,7 +3,7 @@
  * Hardware Target: Model IRP 200D (Thermal Receipt / Order Printer)
  */
 
-export function buildIrp200dTicketHtml(order, ticket, appName = 'KEREFA RESTAURANT') {
+export function buildIrp200dTicketHtml(order, ticket, appName = 'QEREFA') {
     const station = ticket.order_station || ticket.station;
     const stationName = station ? station.name : (ticket.department ? ticket.department.toUpperCase() + ' STATION' : 'ORDER STATION');
     const printerModel = station ? (station.printer_model || 'IRP 200D') : 'IRP 200D';
@@ -11,44 +11,47 @@ export function buildIrp200dTicketHtml(order, ticket, appName = 'KEREFA RESTAURA
     const waiterName = order.waiter ? order.waiter.name : 'Staff';
     const nowStr = new Date().toLocaleString();
 
+    const ticketItems = ticket.items || [];
+    const isVoidTicket = ticketItems.some(ti => ti.status === 'voided');
+
     let itemsHtml = '';
-    if (ticket.items && ticket.items.length > 0) {
-        ticket.items.forEach(ti => {
-            const name = ti.order_item?.name || ti.order_item?.menu_item?.name || 'Item';
-            const note = ti.special_instructions || ti.order_item?.special_instructions || ti.notes;
-            const notes = note ? `<div class="irp200d-item-notes">** ${note} **</div>` : '';
-            itemsHtml += `
-                <tr>
-                    <td class="irp200d-item-qty">${ti.quantity}</td>
-                    <td class="irp200d-item-name">${name}${notes}</td>
-                </tr>
-            `;
-        });
-    }
+    ticketItems.forEach(ti => {
+        const name = ti.order_item?.name || ti.order_item?.menu_item?.name || 'Item';
+        const note = ti.special_instructions || ti.order_item?.special_instructions || ti.notes;
+        const qty = parseFloat(ti.quantity ?? 0).toFixed(2);
+        const isVoid = ti.status === 'voided';
+        const notesRow = note
+            ? `<tr><td class="irp200d-item-notes" colspan="2">** ${note} **</td></tr>`
+            : '';
+        itemsHtml += `
+            <tr>
+                <td class="irp200d-item-name${isVoid ? ' irp200d-item-void' : ''}">${name}</td>
+                <td class="irp200d-item-qty">${qty}</td>
+            </tr>
+            ${notesRow}
+        `;
+    });
 
     return `
         <div class="irp200d-ticket-header">
             <div class="irp200d-title">${appName.toUpperCase()}</div>
-            <div style="font-size: 11px; margin: 2px 0;">PREPARATION ORDER TICKET</div>
-            <div class="irp200d-banner">*** ${stationName.toUpperCase()} ***</div>
+            <div style="font-size: 11px; margin: 2px 0;">${isVoidTicket ? 'VOID TICKET' : 'PREPARATION ORDER TICKET'}</div>
+            <div class="irp200d-banner">*** ${isVoidTicket ? 'VOID / ' : ''}${stationName.toUpperCase()} ***</div>
         </div>
-        <div class="irp200d-meta-row">
-            <span>ORDER: <strong>${order.order_number}</strong></span>
-            <span>TICKET: <strong>#${ticket.ticket_number}</strong></span>
-        </div>
+        <div class="irp200d-meta-line">ORDER: <strong>${order.order_number}</strong></div>
+        <div class="irp200d-meta-line">TICKET: <strong>#${ticket.ticket_number}</strong></div>
         <div class="irp200d-meta-row">
             <span>TABLE: <strong>${tableName}</strong></span>
             <span>WAITER: ${waiterName}</span>
         </div>
-        <div class="irp200d-meta-row">
-            <span>TIME: ${nowStr}</span>
-            <span>PRINTER: ${printerModel}</span>
-        </div>
+        <div class="irp200d-meta-line">TIME: ${nowStr}</div>
+        <div class="irp200d-meta-line">STATION: ${stationName}</div>
+        <div class="irp200d-meta-line">PRINTER: ${printerModel}</div>
         <table class="irp200d-items-table">
             <thead>
                 <tr>
-                    <th style="width: 28px;">QTY</th>
-                    <th>ITEM / SPECIAL PREPARATION</th>
+                    <th class="irp200d-item-name">ITEM</th>
+                    <th class="irp200d-item-qty">QTY</th>
                 </tr>
             </thead>
             <tbody>
@@ -61,7 +64,7 @@ export function buildIrp200dTicketHtml(order, ticket, appName = 'KEREFA RESTAURA
     `;
 }
 
-export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH', amountTendered = 0, appName = 'KEREFA RESTAURANT') {
+export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH', amountTendered = 0, appName = 'QEREFA') {
     const tableName = order.table ? ('T-' + order.table.table_number) : (order.order_type ? order.order_type.toUpperCase() : 'ORDER');
     const waiterName = order.waiter ? order.waiter.name : 'Staff';
     const nowStr = new Date().toLocaleString();
@@ -74,10 +77,11 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
         order.items.forEach(it => {
             if (it.status === 'cancelled' || it.status === 'voided') return;
             const name = it.name || it.menu_item?.name || 'Item';
+            const qty = parseFloat(it.quantity ?? 0).toFixed(2);
             const total = parseFloat(it.subtotal || it.total_price || (it.quantity * it.unit_price) || 0).toFixed(2);
             itemsHtml += `
                 <tr>
-                    <td class="irp200d-item-qty">${it.quantity}</td>
+                    <td class="irp200d-qty-start">${qty}</td>
                     <td class="irp200d-item-name">${name}</td>
                     <td style="text-align: right; font-family: monospace;">${total}</td>
                 </tr>
@@ -103,14 +107,12 @@ export function buildIrp200dSettlementReceiptHtml(order, paymentMethod = 'CASH',
             <span>TABLE: <strong>${tableName}</strong></span>
             <span>WAITER: ${waiterName}</span>
         </div>
-        <div class="irp200d-meta-row">
-            <span>TIME: ${nowStr}</span>
-            <span>METHOD: <strong>${paymentMethod.toUpperCase()}</strong></span>
-        </div>
+        <div class="irp200d-meta-line">TIME: ${nowStr}</div>
+        <div class="irp200d-meta-line">METHOD: <strong>${paymentMethod.toUpperCase()}</strong></div>
         <table class="irp200d-items-table">
             <thead>
                 <tr>
-                    <th style="width: 28px;">QTY</th>
+                    <th class="irp200d-qty-start">QTY</th>
                     <th>ITEM</th>
                     <th style="text-align: right;">ETB</th>
                 </tr>

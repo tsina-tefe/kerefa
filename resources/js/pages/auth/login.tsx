@@ -33,7 +33,7 @@ export default function Login({ status, canResetPassword }: LoginProps) {
         <div className="flex min-h-svh flex-col items-center justify-center bg-white px-4">
             <Head title="Log in" />
 
-            <h1 className="mb-4 text-[28px] font-bold tracking-tight text-neutral-900">Kerefa</h1>
+            <h1 className="mb-4 text-[28px] font-bold tracking-tight text-neutral-900">QEREFA</h1>
 
             <div className="w-full max-w-[340px] border border-neutral-200 bg-white px-5 pt-5 pb-6 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <p className="mb-4 text-center text-[13px] text-neutral-500">Login to start your session</p>

@@ -43,7 +43,14 @@ interface OrderDetails {
     waiter?: { name: string } | null;
     cashier?: { name: string } | null;
     items: OrderItemRow[];
-    tickets: { id: number; ticket_number: string; department: string; status: string; order_station?: { name: string } | null }[];
+    tickets: {
+        id: number;
+        ticket_number: string;
+        department: string;
+        status: string;
+        order_station?: { name: string } | null;
+        items?: { order_item?: { menu_item?: { category?: { name: string } | null } | null } | null }[];
+    }[];
     payments: { id: number; method: string; amount: string; paid_at: string }[];
 }
 
@@ -183,7 +190,7 @@ export default function OrderShow({
                     <CardContent className="grid gap-2 text-sm">
                         {order.tickets.map((ticket) => (
                             <div key={ticket.id}>
-                                {ticket.ticket_number} · {ticket.department} · {ticket.order_station?.name || 'No station'} · {ticket.status}
+                                {ticket.ticket_number} · {ticket.items?.[0]?.order_item?.menu_item?.category?.name || ticket.department} · {ticket.order_station?.name || 'No station'} · {ticket.status}
                             </div>
                         ))}
                         {order.tickets.length === 0 && <div>No tickets.</div>}

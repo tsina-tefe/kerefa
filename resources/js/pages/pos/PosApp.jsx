@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { buildIrp200dTicketHtml, buildIrp200dSettlementReceiptHtml, printIrp200d } from './thermalPrinter';
 
 function roundMoney(value) {
@@ -1559,8 +1560,15 @@ export default function PosApp({ initialData }) {
             <header className="row g-0 border-bottom shrink-0 shadow-2xs pos-header-bar" style={{ minHeight: '54px' }}>
                 {/* Box 1: App / Branch Name */}
                 <div className="col-4 col-sm-3 col-md-2 pos-header-box border-end">
-                    <div className="lh-sm text-truncate w-100 fw-bold" style={{ fontSize: '13px' }}>{appName}</div>
-                    <div className="text-primary text-truncate w-100 small fw-bold">({branch.name})</div>
+                    <div className="d-flex align-items-center gap-2 w-100 min-w-0">
+                        <div className="d-flex align-items-center justify-content-center rounded-circle shrink-0" style={{ width: '28px', height: '28px', background: '#f26b1d', color: '#fff' }}>
+                            <AppLogoIcon className="fill-current" style={{ width: '18px', height: '18px' }} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="lh-sm text-truncate w-100 fw-bold" style={{ fontSize: '13px' }}>{appName}</div>
+                            <div className="text-primary text-truncate w-100 small fw-bold">({branch.name})</div>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Box 2: Staff / Waiter Name (from HR Waiter Department) */}

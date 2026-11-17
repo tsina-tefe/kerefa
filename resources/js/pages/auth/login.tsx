@@ -2,6 +2,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { Lock, User } from 'lucide-react';
 import { FormEventHandler } from 'react';
 
+import AppLogoIcon from '@/components/app-logo-icon';
 import InputError from '@/components/input-error';
 
 interface LoginForm {
@@ -33,7 +34,15 @@ export default function Login({ status, canResetPassword }: LoginProps) {
         <div className="flex min-h-svh flex-col items-center justify-center bg-white px-4">
             <Head title="Log in" />
 
-            <h1 className="mb-4 text-[28px] font-bold tracking-tight text-neutral-900">QEREFA</h1>
+            <div className="mb-4 flex flex-col items-center">
+                <div className="mb-3 flex size-14 items-center justify-center rounded-full bg-[#f26b1d] text-white shadow-[0_1px_2px_rgba(242,107,29,0.35)]">
+                    <AppLogoIcon className="size-9 fill-current" />
+                </div>
+                <h1 className="text-[28px] font-bold tracking-tight text-neutral-900">QEREFA</h1>
+                <p className="mt-1 text-base text-neutral-500" style={{ fontFamily: "'Noto Sans Ethiopic', sans-serif" }}>
+                    ቀረፋ
+                </p>
+            </div>
 
             <div className="w-full max-w-[340px] border border-neutral-200 bg-white px-5 pt-5 pb-6 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <p className="mb-4 text-center text-[13px] text-neutral-500">Login to start your session</p>
